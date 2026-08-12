@@ -2,3 +2,9 @@ openai>=1.30.0
 pydantic>=2.6.0
 python-dotenv>=1.0.0
 numpy>=1.26.0
+
+# Project 12 only. `agentfuse` itself has no dependencies; these are for its test suite
+# and for the LangGraph reproducers in 12-give-back/upstream/.
+pytest>=8.0
+langgraph>=1.0
+langchain-openai>=1.0

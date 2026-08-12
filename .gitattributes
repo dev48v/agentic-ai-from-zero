@@ -1,0 +1,3 @@
+# A patch file must keep its exact bytes — line-ending translation makes `patch` and
+# `git apply` reject it. (Project 12, 12-give-back/upstream/)
+*.patch -text

@@ -1,6 +1,6 @@
 # Agentic AI from Zero
 
-**12 agent patterns, built from zero.** Each project teaches one core agentic idea, hand-rolled with the raw OpenAI-compatible SDK — no heavy framework until it is genuinely needed. Progressive: every project builds on the ideas of the last.
+**12 agent patterns, built from zero. All 12 are done.** Each project teaches one core agentic idea, hand-rolled with the raw OpenAI-compatible SDK — no heavy framework until it is genuinely needed. Progressive: every project builds on the ideas of the last.
 
 See [`ROADMAP.md`](ROADMAP.md) for the full 12-project plan.
 
@@ -42,6 +42,13 @@ Each project is a self-contained folder with its own `run.py` and `README.md`:
 python 01-structured-output/run.py
 ```
 
+Project 12 also ships an installable library and a test suite:
+
+```bash
+pip install -e 12-give-back
+pytest 12-give-back/tests -q
+```
+
 ## Projects
 
 | # | Project | Teaches |
@@ -57,7 +64,7 @@ python 01-structured-output/run.py
 | 09 | [Multi-Agent Debate](09-multi-agent-debate/) | proposers + critic, voting/consensus, confidence-weighted synthesis |
 | 10 | [Self-Reflective Agent (auto-eval)](10-self-reflective/) | LLM-as-judge on its own output, rubric gate, constrained refinement |
 | 11 | [Production Agent (observability)](11-production-observability/) | tracing, latency + cost dashboard, alerting on loops, canary + rollback |
-| 12 | *(see ROADMAP)* | open-source agent framework contribution |
+| 12 | [Give Back — `agentfuse` + a LangGraph gap report](12-give-back/) | packaging the series' lessons as a real library, and contributing them upstream |
 
 ## Environment variables
 
@@ -68,3 +75,14 @@ python 01-structured-output/run.py
 | `NIM_MODEL` | `meta/llama-3.1-8b-instruct` | default model id (warm/fast on the free tier) |
 
 Secrets live in `.env` (gitignored). Never commit your key.
+
+## Where it ended up
+
+Twelve projects, one sentence: **the model reasons, plain code enforces.**
+
+Every project that worked put the judgement in the model and the enforcement in ordinary,
+replayable Python — permissions in P4, human approval in P6, the vote in P9, the rubric's
+hard checks in P10, the rollback guard in P11. Project 12 packages five of those guards as
+[`agentfuse`](12-give-back/), a dependency-free library, and takes the loop-detection
+lesson back to an open-source agent framework as a reproduced gap report and a verified
+patch.

@@ -1,0 +1,152 @@
+--- a/libs/langgraph/langgraph/prebuilt/tool_node.py	2026-08-12 16:07:28.514860900 +0530
++++ b/libs/langgraph/langgraph/prebuilt/tool_node.py	2026-08-12 16:08:21.013273100 +0530
+@@ -752,6 +752,7 @@
+         | type[Exception]
+         | tuple[type[Exception], ...] = _default_handle_tool_errors,
+         messages_key: str = "messages",
++        no_progress_limit: int | None = None,
+         wrap_tool_call: ToolCallWrapper | None = None,
+         awrap_tool_call: AsyncToolCallWrapper | None = None,
+     ) -> None:
+@@ -763,6 +764,12 @@
+             tags: Optional metadata tags.
+             handle_tool_errors: Error handling configuration.
+             messages_key: State key containing messages.
++            no_progress_limit: If set, refuse a tool call whose (name, args) signature has
++                already been executed this many times in this request instead of running
++                it again. `recursion_limit` caps how many steps a graph may take; this
++                caps how many times it may take the *same* step. Refused calls come back
++                as `ToolMessage(status="error")`, so the agent can recover or stop, and
++                the wasted tool call never happens. Defaults to `None` (off).
+             wrap_tool_call: Sync wrapper function to intercept tool execution. Receives
+                 ToolCallRequest and execute callable, returns ToolMessage or Command.
+                 Enables retries, caching, request modification, and control flow.
+@@ -774,6 +781,10 @@
+         self._injected_args: dict[str, _InjectedArgs] = {}
+         self._handle_tool_errors = handle_tool_errors
+         self._messages_key = messages_key
++        if no_progress_limit is not None and no_progress_limit < 2:
++            msg = "no_progress_limit must be at least 2 - a first call is never a repeat"
++            raise ValueError(msg)
++        self._no_progress_limit = no_progress_limit
+         self._wrap_tool_call = wrap_tool_call
+         self._awrap_tool_call = awrap_tool_call
+         for tool in tools:
+@@ -797,6 +808,8 @@
+         runtime: Runtime,
+     ) -> Any:
+         tool_calls, input_type = self._parse_input(input)
++        if (refusals := self._no_progress_refusals(input, tool_calls)) is not None:
++            return self._combine_tool_outputs(refusals, input_type)
+         config_list = get_config_list(config, len(tool_calls))
+ 
+         # Construct ToolRuntime instances at the top level for each tool call
+@@ -832,6 +845,8 @@
+         runtime: Runtime,
+     ) -> Any:
+         tool_calls, input_type = self._parse_input(input)
++        if (refusals := self._no_progress_refusals(input, tool_calls)) is not None:
++            return self._combine_tool_outputs(refusals, input_type)
+         config_list = get_config_list(config, len(tool_calls))
+ 
+         # Construct ToolRuntime instances at the top level for each tool call
+@@ -859,6 +874,99 @@
+ 
+         return self._combine_tool_outputs(outputs, input_type)
+ 
++    @staticmethod
++    def _call_signature(name: str, args: Any) -> str:
++        """Stable identity for "this exact call".
++
++        Sorted keys so reordering the arguments cannot disguise a repeat, and
++        `default=str` so an unserialisable argument degrades instead of raising: a
++        progress check that can crash the graph is worse than no progress check.
++        """
++        try:
++            blob = json.dumps(
++                args or {}, sort_keys=True, default=str, separators=(",", ":")
++            )
++        except Exception:  # noqa: BLE001
++            blob = repr(args)
++        return f"{name}:{blob}"
++
++    def _executed_signatures(self, input: Any) -> list[str]:
++        """Signatures of the tool calls in this transcript that actually RAN.
++
++        Derived from the messages rather than counted on `self`, because a `ToolNode`
++        instance is shared by every request the process serves; a counter stored on it
++        would leak one request's loop into another's. A call whose `ToolMessage` is an
++        error did not run, and must not be counted as a repeat of itself.
++        """
++        if isinstance(input, list):
++            messages = input
++        elif isinstance(input, dict):
++            messages = input.get(self._messages_key) or []
++        else:
++            messages = getattr(input, self._messages_key, None) or []
++        answered: set[str] = set()
++        failed: set[str] = set()
++        for message in messages:
++            if getattr(message, "type", None) == "tool":
++                answered.add(getattr(message, "tool_call_id", ""))
++                if getattr(message, "status", None) == "error":
++                    failed.add(getattr(message, "tool_call_id", ""))
++        signatures: list[str] = []
++        for message in messages:
++            for call in getattr(message, "tool_calls", None) or []:
++                call_id = (
++                    call.get("id") if isinstance(call, dict) else getattr(call, "id", None)
++                )
++                if call_id in answered and call_id not in failed:
++                    name = (
++                        call.get("name")
++                        if isinstance(call, dict)
++                        else getattr(call, "name", "")
++                    )
++                    args = (
++                        call.get("args")
++                        if isinstance(call, dict)
++                        else getattr(call, "args", None)
++                    ) or {}
++                    signatures.append(self._call_signature(name, args))
++        return signatures
++
++    def _no_progress_refusals(
++        self, input: Any, tool_calls: list[ToolCall]
++    ) -> list[ToolMessage] | None:
++        """`None` when the turn may proceed, otherwise a refusal for every pending call.
++
++        All-or-nothing per turn: half-running a batch would leave the repeat history
++        describing work that never happened.
++        """
++        if self._no_progress_limit is None or not tool_calls:
++            return None
++        history = self._executed_signatures(input)
++        offenders = [
++            call
++            for call in tool_calls
++            if history.count(self._call_signature(call["name"], call.get("args")))
++            >= self._no_progress_limit - 1
++        ]
++        if not offenders:
++            return None
++        offending = ", ".join(sorted({call["name"] for call in offenders}))
++        return [
++            ToolMessage(
++                content=(
++                    f"Refused: this request has already run {offending} with these exact "
++                    f"arguments {self._no_progress_limit - 1} time(s) and is not making "
++                    f"progress (no_progress_limit={self._no_progress_limit}). The tool "
++                    f"was NOT called. Try a different approach, or answer with what you "
++                    f"already have."
++                ),
++                name=call["name"],
++                tool_call_id=call["id"],
++                status="error",
++            )
++            for call in tool_calls
++        ]
++
+     def _combine_tool_outputs(
+         self,
+         outputs: list[ToolMessage | Command | list[ToolMessage | Command]],

@@ -1,0 +1,43 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "agentfuse"
+version = "0.1.0"
+description = "Deterministic runtime fuses for LLM agents: deny-by-default tool permissions, inline loop detection, spend ceilings, hard-check gating and canary rollback. Zero dependencies."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [{ name = "Devanshu Biswas" }]
+keywords = ["llm", "agents", "guardrails", "loop-detection", "tool-permissions",
+            "cost-control", "langgraph", "observability"]
+classifiers = [
+  "Development Status :: 4 - Beta",
+  "Intended Audience :: Developers",
+  "License :: OSI Approved :: MIT License",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Topic :: Software Development :: Libraries :: Python Modules",
+]
+
+# Deliberately empty. A safety layer that drags in a dependency tree is a safety layer
+# nobody installs, and one more supply chain in the path of your agent's tool calls.
+dependencies = []
+
+[project.optional-dependencies]
+langgraph = ["langgraph>=0.2"]
+dev = ["pytest>=8.0"]
+
+[project.urls]
+Homepage = "https://github.com/dev48v/agentic-ai-from-zero"
+Source = "https://github.com/dev48v/agentic-ai-from-zero/tree/main/12-give-back"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
